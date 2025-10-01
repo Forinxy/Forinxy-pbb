@@ -103,7 +103,6 @@
         .action-buttons {
             display: flex;
             justify-content: center;
-            gap: 20px;
             margin: 20px 0;
         }
         
@@ -118,28 +117,14 @@
             display: flex;
             align-items: center;
             gap: 8px;
-        }
-        
-        .btn-primary {
             background: linear-gradient(to right, #00b09b, #96c93d);
             color: white;
             box-shadow: 0 4px 15px rgba(0, 176, 155, 0.4);
         }
         
-        .btn-primary:hover {
+        .btn:hover {
             transform: translateY(-3px);
             box-shadow: 0 6px 20px rgba(0, 176, 155, 0.6);
-        }
-        
-        .btn-secondary {
-            background: linear-gradient(to right, #ff416c, #ff4b2b);
-            color: white;
-            box-shadow: 0 4px 15px rgba(255, 65, 108, 0.4);
-        }
-        
-        .btn-secondary:hover {
-            transform: translateY(-3px);
-            box-shadow: 0 6px 20px rgba(255, 65, 108, 0.6);
         }
         
         /* 日历样式 */
@@ -229,6 +214,7 @@
             text-align: center;
             cursor: pointer;
             transition: all 0.2s ease;
+            position: relative;
         }
         
         .shift-item:hover {
@@ -325,8 +311,9 @@
         
         @media (max-width: 480px) {
             .action-buttons {
-                flex-direction: column;
-                align-items: center;
+                width: 100%;
+                display: flex;
+                justify-content: center;
             }
             
             .btn {
@@ -345,7 +332,7 @@
     <div class="container">
         <header>
             <h1><i class="fas fa-calendar-alt"></i> 24小时三班倒排班表</h1>
-            <p class="subtitle">GitHub协作版 - 选择您的身份，点击班次进行分配，使用"确定配置"按钮同步到所有用户</p>
+            <p class="subtitle">GitHub协作版 - 选择您的身份，查看您的排班，点击班次进行修改</p>
         </header>
         
         <!-- 用户选择区域 -->
@@ -358,11 +345,8 @@
         
         <!-- 操作按钮 -->
         <div class="action-buttons">
-            <button class="btn btn-primary" id="confirmBtn">
+            <button class="btn" id="confirmBtn">
                 <i class="fas fa-sync-alt"></i> 确定配置（同步到所有用户）
-            </button>
-            <button class="btn btn-secondary" id="resetBtn">
-                <i class="fas fa-redo"></i> 重置排班表
             </button>
         </div>
         
@@ -393,10 +377,10 @@
             <h3><i class="fas fa-info-circle"></i> 使用说明</h3>
             <ul>
                 <li>首先在顶部选择您的身份（张三、李四或王五）</li>
-                <li>点击日历中的班次（早/中/晚）即可分配给自己</li>
+                <li>日历将自动显示您当前的排班（绿色小圆点标识）</li>
+                <li>点击任意班次（早/中/晚）可修改该班次的负责人</li>
                 <li>点击<span style="background:#e0f7fa;padding:2px 6px;border-radius:4px;">确定配置</span>按钮将当前排班同步到所有用户</li>
                 <li>排班数据存储在GitHub仓库中，所有协作者都能看到最新配置</li>
-                <li>点击<span style="background:#ffebee;padding:2px 6px;border-radius:4px;">重置排班表</span>可恢复默认排班</li>
             </ul>
         </div>
         
@@ -427,12 +411,12 @@
                     document.querySelectorAll('.user-btn').forEach(b => b.classList.remove('active'));
                     this.classList.add('active');
                     currentUser = this.dataset.user;
+                    renderCalendar(); // 重新渲染日历
                 });
             });
             
             // 绑定操作按钮事件
             document.getElementById('confirmBtn').addEventListener('click', confirmConfiguration);
-            document.getElementById('resetBtn').addEventListener('click', resetSchedule);
             
             // 绑定日历导航事件
             document.getElementById('prevMonth').addEventListener('click', () => navigateMonth(-1));
@@ -526,12 +510,12 @@
                 shifts.forEach(shift => {
                     const shiftItem = document.createElement('div');
                     shiftItem.className = `shift-item ${shift}`;
-                    shiftItem.textContent = shiftNames[shift];
+                    shiftItem.textContent = scheduleData[dateKey][shift];
                     shiftItem.dataset.date = dateKey;
                     shiftItem.dataset.shift = shift;
                     
                     // 如果当前用户在这个班次，添加高亮标记
-                    if (scheduleData[dateKey][shift] === currentUser) {
+                    if (currentUser && scheduleData[dateKey][shift] === currentUser) {
                         const currentUserIndicator = document.createElement('div');
                         currentUserIndicator.className = 'current-user';
                         shiftItem.appendChild(currentUserIndicator);
@@ -559,16 +543,81 @@
             const dateKey = e.target.dataset.date || e.target.parentElement.dataset.date;
             const shift = e.target.dataset.shift || e.target.parentElement.dataset.shift;
             
-            // 更新数据
-            scheduleData[dateKey][shift] = currentUser;
-            saveScheduleData();
+            // 创建选择菜单
+            showPersonSelector(e.target, dateKey, shift);
+        }
+        
+        // 显示人员选择菜单
+        function showPersonSelector(targetElement, dateKey, shift) {
+            // 移除已存在的选择器
+            const existingSelector = document.querySelector('.person-selector');
+            if (existingSelector) {
+                existingSelector.remove();
+            }
             
-            // 重新渲染日历
-            renderCalendar();
+            // 创建选择菜单
+            const selector = document.createElement('div');
+            selector.className = 'person-selector';
+            selector.style.position = 'absolute';
+            selector.style.backgroundColor = 'white';
+            selector.style.border = '1px solid #ccc';
+            selector.style.borderRadius = '8px';
+            selector.style.boxShadow = '0 4px 12px rgba(0,0,0,0.15)';
+            selector.style.zIndex = '1000';
+            selector.style.minWidth = '120px';
+            
+            // 计算位置
+            const rect = targetElement.getBoundingClientRect();
+            selector.style.top = rect.bottom + window.scrollY + 'px';
+            selector.style.left = rect.left + window.scrollX + 'px';
+            
+            // 添加人员选项
+            persons.forEach(person => {
+                const option = document.createElement('div');
+                option.className = 'person-option';
+                option.textContent = person;
+                option.style.padding = '10px 15px';
+                option.style.cursor = 'pointer';
+                option.style.textAlign = 'center';
+                option.style.transition = 'background 0.2s';
+                
+                option.addEventListener('mouseover', () => {
+                    option.style.backgroundColor = '#f0f0f0';
+                });
+                
+                option.addEventListener('mouseout', () => {
+                    option.style.backgroundColor = 'white';
+                });
+                
+                option.addEventListener('click', () => {
+                    // 更新数据
+                    scheduleData[dateKey][shift] = person;
+                    saveScheduleData();
+                    renderCalendar();
+                    document.body.removeChild(selector);
+                });
+                
+                selector.appendChild(option);
+            });
+            
+            // 点击外部关闭
+            document.body.addEventListener('click', function closeSelector(e) {
+                if (!selector.contains(e.target) && e.target !== targetElement) {
+                    document.body.removeChild(selector);
+                    document.body.removeEventListener('click', closeSelector);
+                }
+            });
+            
+            document.body.appendChild(selector);
         }
         
         // 确认配置（同步到所有用户）
         function confirmConfiguration() {
+            if (!currentUser) {
+                alert('请先选择您的身份！');
+                return;
+            }
+            
             if (Object.keys(scheduleData).length === 0) {
                 alert('请先设置排班表！');
                 return;
@@ -581,16 +630,6 @@
             // 1. 将scheduleData保存到GitHub仓库的某个文件
             // 2. 触发GitHub Pages重新构建
             // 3. 通知其他协作者
-        }
-        
-        // 重置排班表
-        function resetSchedule() {
-            if (confirm('确定要重置排班表吗？所有自定义排班将被清除。')) {
-                scheduleData = {};
-                loadScheduleData();
-                renderCalendar();
-                alert('排班表已重置为默认轮班制！');
-            }
         }
         
         // 导航月份
